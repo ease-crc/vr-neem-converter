@@ -1,5 +1,10 @@
-from symbol import atom
-from typing import List
+import tempfile
+from typing import List, Tuple
+
+from knowrob_industrial.utils import resolve_package_urls
+from neem_interface_python.neem_interface import NEEMInterface
+from neem_interface_python.rosprolog_client import atom
+from owlready2 import get_ontology, Ontology, ThingClass
 
 
 def pose_to_knowrob_string(pose: List[float], reference_frame="world") -> str:
@@ -8,3 +13,32 @@ def pose_to_knowrob_string(pose: List[float], reference_frame="world") -> str:
     """
     return f"[{atom(reference_frame)}, [{pose[0]},{pose[1]},{pose[2]}], [{pose[3]},{pose[4]},{pose[5]},{pose[6]}]]"
 
+
+def assert_agent_and_hand(semantic_map: Ontology, neem_interface: NEEMInterface, agent_iri: str,
+                          end_effector_class: ThingClass) -> str:
+    """
+    Assert meta-information about the hands (e.g. fingers etc.) of the VR avatar
+    Assumption: All objects in the semantic map have already been asserted into the knowledge base
+    """
+
+    # Hand
+    hand_indi = semantic_map.search_one(type=end_effector_class)
+    agent_iri = neem_interface.assert_agent_with_effector(hand_indi.iri, agent_iri=agent_iri)
+
+    # Fingertips
+    thumb_class = semantic_map.search_one(iri="*rThumb3")
+    thumb_indi = semantic_map.search_one(type=thumb_class)
+    neem_interface.prolog.once(f"holds({atom(hand_indi.iri)}, soma:'hasFinger', {atom(thumb_indi.iri)})")
+    index_class = semantic_map.search_one(iri="*rIndex3")
+    index_indi = semantic_map.search_one(type=index_class)
+    neem_interface.prolog.once(f"holds({atom(hand_indi.iri)}, soma:'hasFinger', {atom(index_indi.iri)})")
+
+    return agent_iri
+
+
+def load_ontology(owl_filepath: str) -> Ontology:
+    temp_file = tempfile.NamedTemporaryFile(suffix='.owl', mode="w+t")
+    with open(owl_filepath) as owl_file:
+        patched_owl = resolve_package_urls(owl_file.read())
+        temp_file.write(patched_owl)
+    return get_ontology(f"file://{temp_file.name}").load()
