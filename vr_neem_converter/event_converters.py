@@ -48,10 +48,10 @@ class EventConverter:
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
-        gripper = indi.performedBy[0].iri     # TODO: Assert gripper and graspedObject as Roles
+        gripper = indi.performedBy[0].iri  # TODO: Assert gripper and graspedObject as Roles
         graspedObject = indi.objectActedOn[0].iri
-        state_iri = self.parent.neem_interface.assert_state([gripper, graspedObject], start_time, end_time,
-                                                             state_type="soma:'GraspState'")
+        state_iri = self._assert_state([gripper, graspedObject], start_time, end_time,
+                                       state_type='http://www.ease-crc.org/ont/SOMA.owl#GraspState')
         self.asserted_states.append(state_iri)
 
     def convert_slicing_something(self, indi):
@@ -65,8 +65,8 @@ class EventConverter:
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
         participants = [thing.iri for thing in indi.inContact]
-        state_iri = self.parent.neem_interface.assert_state(participants, start_time, end_time,
-                                                            state_type="soma:'ContactState'")
+        state_iri = self._assert_state(participants, start_time, end_time,
+                                       state_type='http://www.ease-crc.org/ont/SOMA.owl#ContactState')
         self.asserted_states.append(state_iri)
 
     def convert_supported_by_situation(self, indi):
@@ -75,10 +75,10 @@ class EventConverter:
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
-        supportee = indi.isSupported[0].iri     # TODO: Assert supporter and supportee as Roles
+        supportee = indi.isSupported[0].iri  # TODO: Assert supporter and supportee as Roles
         supporter = indi.isSupported[0].iri
-        state_iri = self.parent.neem_interface.assert_state([supportee, supporter], start_time, end_time,
-                                                            state_type="soma:'SupportState'")
+        state_iri = self._assert_state([supportee, supporter], start_time, end_time,
+                                       state_type='http://www.ease-crc.org/ont/SOMA.owl#SupportState')
         self.asserted_states.append(state_iri)
 
     def convert_container_manipulation(self, indi):
@@ -127,7 +127,8 @@ class EventConverter:
                                                                         start_time=start_time, end_time=end_time)
         initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, actor, [obj])
         terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, actor, [obj])
-        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation, terminal_situation)
+        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
+                                                                            terminal_situation)
 
     def convert_sliding_situation(self, indi):
         # raise NotImplementedError()
@@ -146,25 +147,36 @@ class EventConverter:
         pass
 
     def _assert_situation_manifesting_at_timestamp(self, start_time: float, agent: str, objects: List[str]) -> str:
-        situation_iri = self.parent.neem_interface.assert_situation(agent, objects, "dul:'Situation'")
+        situation_iri = self.parent.neem_interface.assert_situation(agent, objects,
+                                                                    'http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#Situation')
         for state_iri in self.asserted_states:
-            res = self.parent.neem_interface.prolog.once(
+            res = self.parent.neem_interface.prolog.ensure_once(
                 f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
             state_start_time = float(res["StartTime"])
             state_end_time = float(res["EndTime"])
             if state_start_time < start_time < state_end_time:
-                self.parent.neem_interface.prolog.once(
-                    f"kb_project(holds({atom(situation_iri)}, soma:'manifestsIn', {atom(state_iri)}))")
+                self.parent.neem_interface.prolog.ensure_once(
+                    f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
         return situation_iri
 
-    def _assert_situation_transition_for_action(self, action_iri: str, initial_situation: str, terminal_situation: str) -> str:
-        agent = self.parent.neem_interface.prolog.once(f"kb_call(is_performed_by({atom(action_iri)}, Agent))")["Agent"]
-        situation_transition_iri = self.parent.neem_interface.assert_situation(agent, [], "soma:'SituationTransition'")
-        self.parent.neem_interface.prolog.once(f"""
+    def _assert_situation_transition_for_action(self, action_iri: str, initial_situation: str,
+                                                terminal_situation: str) -> str:
+        agent = self.parent.neem_interface.prolog.ensure_once(f"kb_call(is_performed_by({atom(action_iri)}, Agent))")[
+            "Agent"]
+        situation_transition_iri = self.parent.neem_interface.assert_situation(agent, [],
+                                                                               'http://www.ease-crc.org/ont/SOMA.owl#SituationTransition')
+        self.parent.neem_interface.prolog.ensure_once(f"""
             kb_project([
-                holds({atom(situation_transition_iri)}, "soma:'hasInitialSituation'", {atom(initial_situation)}),
-                holds({atom(situation_transition_iri)}, "soma:'hasTerminalSituation'", {atom(terminal_situation)}),
-                holds({atom(situation_transition_iri)}, "soma:'manifestsIn'", {atom(action_iri)})
+                holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasInitialSituation', {atom(initial_situation)}),
+                holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasTerminalSituation', {atom(terminal_situation)}),
+                holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(action_iri)})
             ])
         """)
         return situation_transition_iri
+
+    def _assert_state(self, participants: List[str], start_time: float, end_time: float,
+                      state_type='http://www.ease-crc.org/ont/SOMA.owl#State') -> str:
+        if self.parent.agent not in participants:  # Enforce that the agent is always participant of the state
+            participants.append(self.parent.agent)
+        return self.parent.neem_interface.assert_state(participants, start_time, end_time,
+                                                       state_type=state_type)

@@ -81,7 +81,7 @@ class VRNEEMConverter:
             if obj_indi.is_a[0].iri in known_classes:
                 obj_type = obj_indi.is_a[0].iri
             else:
-                obj_type = "dul:'PhysicalObject'"
+                obj_type = "http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#PhysicalObject"
             self.neem_interface.prolog.once(f"""
                 kb_project([
                     is_individual({atom(obj_indi.iri)}), instance_of({atom(obj_indi.iri)}, {atom(obj_type)}) 
