@@ -168,7 +168,7 @@ class EventConverter:
                 f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
             state_start_time = float(res["StartTime"])
             state_end_time = float(res["EndTime"])
-            if state_start_time < timestamp < state_end_time:
+            if state_start_time <= timestamp <= state_end_time:
                 self.parent.neem_interface.prolog.ensure_once(
                     f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
         return situation_iri

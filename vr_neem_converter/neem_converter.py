@@ -86,11 +86,16 @@ class VRNEEMConverter:
                 obj_type = "http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#PhysicalObject"
             self.neem_interface.prolog.ensure_once(f"""
                 kb_project([
-                    is_individual({atom(obj_indi.iri)}), instance_of({atom(obj_indi.iri)}, {atom(obj_type)}) 
+                    is_individual({atom(obj_indi.iri)}), instance_of({atom(obj_indi.iri)}, {atom(obj_type)})
                 ])
             """)
             objects[obj_indi.iri] = obj_type
             if self._is_active_object(obj_indi.iri, event_ontology):
+                self.neem_interface.prolog.ensure_once(f"""
+                    kb_project([
+                        has_participant({atom(obj_indi.iri)}, {atom(self.episode.top_level_action_iri)}) 
+                    ])
+                """)
                 active_objects[obj_indi.iri] = obj_type
 
         # Assert hands as end effectors
