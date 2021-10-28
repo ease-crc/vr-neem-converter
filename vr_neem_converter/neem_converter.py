@@ -69,6 +69,8 @@ class VRNEEMConverter:
                 self._assert_events(event_owl_filepath)
                 self._assert_tf(db[collection_name])
 
+            break   # TODO: Remove
+
     def _assert_objects_and_agent(self, semantic_map_owl_filepath: str, event_owl_filepath: str) -> Tuple[str, dict, dict]:
         semantic_map = load_ontology(semantic_map_owl_filepath)
         event_ontology = load_ontology(event_owl_filepath)
@@ -82,7 +84,7 @@ class VRNEEMConverter:
                 obj_type = obj_indi.is_a[0].iri
             else:
                 obj_type = "http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#PhysicalObject"
-            self.neem_interface.prolog.once(f"""
+            self.neem_interface.prolog.ensure_once(f"""
                 kb_project([
                     is_individual({atom(obj_indi.iri)}), instance_of({atom(obj_indi.iri)}, {atom(obj_type)}) 
                 ])

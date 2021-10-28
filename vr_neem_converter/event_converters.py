@@ -48,10 +48,14 @@ class EventConverter:
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
-        gripper = indi.performedBy[0].iri  # TODO: Assert gripper and graspedObject as Roles
-        graspedObject = indi.objectActedOn[0].iri
-        state_iri = self._assert_state([gripper, graspedObject], start_time, end_time,
+        gripper = indi.performedBy[0].iri
+        grasped_object = indi.objectActedOn[0].iri
+        state_iri = self._assert_state([gripper, grasped_object], start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#GraspState')
+        situation_iri = self._assert_situation_for_state(state_iri, [gripper, grasped_object])
+        self.parent.neem_interface.prolog.ensure_once(f"""
+            kb_project(object_grasped_in_situation({atom(grasped_object)}, {atom(gripper)}, {atom(situation_iri)})) 
+        """)
         self.asserted_states.append(state_iri)
 
     def convert_slicing_something(self, indi):
@@ -87,10 +91,20 @@ class EventConverter:
 
     def convert_pick_up_situation(self, indi):
         """
-        PickUp is an ACTION
+        PickUp is an ACTION, called PickUp in the HTML viz, mapped to a PhysicalAction for a task soma:PickingUp in SOMA
         """
-        # raise NotImplementedError()
-        pass
+        start_time = self._extract_timestamp(indi.startTime[0])
+        end_time = self._extract_timestamp(indi.endTime[0])
+        actor = indi.performedBy[0].iri
+        obj = indi.objectActedOn[0].iri
+        action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
+                                                                        sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
+                                                                        task_type="http://www.ease-crc.org/ont/SOMA.owl#PickingUp",
+                                                                        start_time=start_time, end_time=end_time)
+        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
+        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
+        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
+                                                                            terminal_situation)
 
     def convert_pregrasp_situation(self, indi):
         """
@@ -104,8 +118,8 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.artiminds.com/kb/artm.owl#PreGraspTask",
                                                                         start_time=start_time, end_time=end_time)
-        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, actor, [obj])
-        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, actor, [obj])
+        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
+        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
                                                                             terminal_situation)
 
@@ -125,8 +139,8 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#Reaching",
                                                                         start_time=start_time, end_time=end_time)
-        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, actor, [obj])
-        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, actor, [obj])
+        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
+        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
                                                                             terminal_situation)
 
@@ -146,15 +160,15 @@ class EventConverter:
         """
         pass
 
-    def _assert_situation_manifesting_at_timestamp(self, start_time: float, agent: str, objects: List[str]) -> str:
-        situation_iri = self.parent.neem_interface.assert_situation(agent, objects,
+    def _assert_situation_manifesting_at_timestamp(self, timestamp: float, objects: List[str]) -> str:
+        situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
                                                                     'http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#Situation')
         for state_iri in self.asserted_states:
             res = self.parent.neem_interface.prolog.ensure_once(
                 f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
             state_start_time = float(res["StartTime"])
             state_end_time = float(res["EndTime"])
-            if state_start_time < start_time < state_end_time:
+            if state_start_time < timestamp < state_end_time:
                 self.parent.neem_interface.prolog.ensure_once(
                     f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
         return situation_iri
@@ -173,6 +187,13 @@ class EventConverter:
             ])
         """)
         return situation_transition_iri
+
+    def _assert_situation_for_state(self, state_iri: str, objects: List[str]) -> str:
+        situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
+                                                                    'http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#Situation')
+        self.parent.neem_interface.prolog.ensure_once(
+            f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
+        return situation_iri
 
     def _assert_state(self, participants: List[str], start_time: float, end_time: float,
                       state_type='http://www.ease-crc.org/ont/SOMA.owl#State') -> str:

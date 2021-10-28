@@ -28,10 +28,10 @@ def assert_agent_and_hand(semantic_map: Ontology, neem_interface: NEEMInterface,
     # Fingertips
     thumb_class = semantic_map.search_one(iri="*rThumb3")
     thumb_indi = semantic_map.search_one(type=thumb_class)
-    neem_interface.prolog.once(f"holds({atom(hand_indi.iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasFinger', {atom(thumb_indi.iri)})")
+    neem_interface.prolog.ensure_once(f"kb_project(holds({atom(hand_indi.iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasFinger', {atom(thumb_indi.iri)}))")
     index_class = semantic_map.search_one(iri="*rIndex3")
     index_indi = semantic_map.search_one(type=index_class)
-    neem_interface.prolog.once(f"holds({atom(hand_indi.iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasFinger', {atom(index_indi.iri)})")
+    neem_interface.prolog.ensure_once(f"kb_project(holds({atom(hand_indi.iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasFinger', {atom(index_indi.iri)}))")
 
     return agent_iri
 
