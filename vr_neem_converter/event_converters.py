@@ -42,7 +42,7 @@ class EventConverter:
     def is_action(event_indi) -> bool:
         return not EventConverter.is_state(event_indi)
 
-    def convert_grasping_something(self, indi):
+    def convert_grasping_something(self, indi) -> str:
         """
         Grasping is a STATE, called "Grasp" in the HTML viz, called "GraspState" in SOMA
         """
@@ -57,12 +57,13 @@ class EventConverter:
             kb_project(object_grasped_in_situation({atom(grasped_object)}, {atom(gripper)}, {atom(situation_iri)})) 
         """)
         self.asserted_states.append(state_iri)
+        return state_iri
 
-    def convert_slicing_something(self, indi):
+    def convert_slicing_something(self, indi) -> str:
         # raise NotImplementedError()
         pass
 
-    def convert_touching_situation(self, indi):
+    def convert_touching_situation(self, indi) -> str:
         """
         TouchingSituation is a  STATE, called "Contact" in the HTML viz, called "ContactState" in SOMA
         """
@@ -72,8 +73,9 @@ class EventConverter:
         state_iri = self._assert_state(participants, start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#ContactState')
         self.asserted_states.append(state_iri)
+        return state_iri
 
-    def convert_supported_by_situation(self, indi):
+    def convert_supported_by_situation(self, indi) -> str:
         """
         SupportedBy is a STATE, called "SupportedBy" in the HTML viz, called "SupportState" in SOMA
         """
@@ -84,12 +86,13 @@ class EventConverter:
         state_iri = self._assert_state([supportee, supporter], start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#SupportState')
         self.asserted_states.append(state_iri)
+        return state_iri
 
-    def convert_container_manipulation(self, indi):
+    def convert_container_manipulation(self, indi) -> str:
         # raise NotImplementedError()
         pass
 
-    def convert_pick_up_situation(self, indi):
+    def convert_pick_up_situation(self, indi) -> str:
         """
         PickUp is an ACTION, called PickUp in the HTML viz, mapped to a PhysicalAction for a task soma:PickingUp in SOMA
         """
@@ -105,8 +108,9 @@ class EventConverter:
         terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
                                                                             terminal_situation)
+        return action_iri
 
-    def convert_pregrasp_situation(self, indi):
+    def convert_pregrasp_situation(self, indi) -> str:
         """
         PreGrasp is an ACTION, called "PreGrasp" in the HTML viz, mapped to a PhysicalAction for a task artm:PreGraspTask in SOMA
         """
@@ -122,12 +126,13 @@ class EventConverter:
         terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
                                                                             terminal_situation)
+        return action_iri
 
-    def convert_put_down_situation(self, indi):
+    def convert_put_down_situation(self, indi) -> str:
         # raise NotImplementedError()
         pass
 
-    def convert_reaching_situation(self, indi):
+    def convert_reaching_situation(self, indi) -> str:
         """
         Reaching is an ACTION, called "Reach" in the HTML viz, mapped to a PhysicalAction for task Reaching in SOMA
         """
@@ -143,22 +148,26 @@ class EventConverter:
         terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
                                                                             terminal_situation)
+        return action_iri
 
-    def convert_sliding_situation(self, indi):
+    def convert_sliding_situation(self, indi) -> str:
         # raise NotImplementedError()
         pass
 
-    def convert_transporting_situation(self, indi):
+    def convert_transporting_situation(self, indi) -> str:
         # raise NotImplementedError()
         pass
 
-    def _convert_common(self, indi):
-        """
-        Each event corresponds to an Action
-        :param indi:
-        :return:
-        """
-        pass
+    def create_anonymous_action(self, start_time: float, end_time: float) -> str:
+        action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
+                                                                        sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
+                                                                        task_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalTask",
+                                                                        start_time=start_time, end_time=end_time)
+        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [])
+        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [])
+        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
+                                                                            terminal_situation)
+        return action_iri
 
     def _assert_situation_manifesting_at_timestamp(self, timestamp: float, objects: List[str]) -> str:
         situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
