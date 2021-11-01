@@ -45,6 +45,7 @@ class EventConverter:
     def convert_grasping_something(self, indi) -> str:
         """
         Grasping is a STATE, called "Grasp" in the HTML viz, called "GraspState" in SOMA
+        Gripper and Graspee are related via http://www.artiminds.com/kb/knowrob_industrial.owl#GraspRelation
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
@@ -66,12 +67,17 @@ class EventConverter:
     def convert_touching_situation(self, indi) -> str:
         """
         TouchingSituation is a  STATE, called "Contact" in the HTML viz, called "ContactState" in SOMA
+        Objects in contact are related via http://www.artiminds.com/kb/knowrob_industrial.owl#ContactRelation
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
         participants = [thing.iri for thing in indi.inContact]
         state_iri = self._assert_state(participants, start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#ContactState')
+        situation_iri = self._assert_situation_for_state(state_iri, participants)
+        self.parent.neem_interface.prolog.ensure_once(f"""
+            kb_project(objects_touch_in_situation({atom(participants[0])}, {atom(participants[1])}, {atom(situation_iri)}))
+        """)
         self.asserted_states.append(state_iri)
         return state_iri
 
