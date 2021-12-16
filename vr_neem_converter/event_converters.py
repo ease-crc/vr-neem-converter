@@ -87,10 +87,15 @@ class EventConverter:
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
-        supportee = indi.isSupported[0].iri  # TODO: Assert supporter and supportee as Roles
-        supporter = indi.isSupported[0].iri
-        state_iri = self._assert_state([supportee, supporter], start_time, end_time,
+        supportee = indi.isSupported[0].iri
+        supporter = indi.isSupporting[0].iri
+        participants = [supportee, supporter]
+        state_iri = self._assert_state(participants, start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#SupportState')
+        situation_iri = self._assert_situation_for_state(state_iri, participants)
+        self.parent.neem_interface.prolog.ensure_once(f"""
+                kb_project(object_supported_in_situation({atom(supportee)}, {atom(supporter)}, {atom(situation_iri)}))
+            """)
         self.asserted_states.append(state_iri)
         return state_iri
 
@@ -118,7 +123,7 @@ class EventConverter:
 
     def convert_pregrasp_situation(self, indi) -> str:
         """
-        PreGrasp is an ACTION, called "PreGrasp" in the HTML viz, mapped to a PhysicalAction for a task artm:PreGraspTask in SOMA
+        PreGrasp is an ACTION, called "PreGrasp" in the HTML viz, mapped to a PhysicalAction for a task soma:Grasping in SOMA
         """
         start_time = self._extract_timestamp(indi.startTime[0])
         end_time = self._extract_timestamp(indi.endTime[0])
@@ -126,12 +131,13 @@ class EventConverter:
         obj = indi.objectActedOn[0].iri
         action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
-                                                                        task_type="http://www.artiminds.com/kb/artm.owl#PreGraspTask",
+                                                                        task_type="http://www.ease-crc.org/ont/SOMA.owl#Grasping",
                                                                         start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
         initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
         terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
-                                                                            terminal_situation)
+                                                                            terminal_situation)                    
         return action_iri
 
     def convert_put_down_situation(self, indi) -> str:
@@ -150,6 +156,7 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#Reaching",
                                                                         start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#GoalRole")
         initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
         terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
         situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
@@ -188,12 +195,26 @@ class EventConverter:
                     f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
         return situation_iri
 
+    def _assert_situation_transition_manifesting_during_interval(self, start_time, end_time) -> str:
+        situation_transition_iri = self.parent.neem_interface.assert_situation(self.parent.agent, [],
+                                                                               'http://www.ease-crc.org/ont/SOMA.owl#SituationTransition')
+        for state_iri in self.asserted_states:
+            res = self.parent.neem_interface.prolog.ensure_once(
+                f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
+            state_start_time = float(res["StartTime"])
+            state_end_time = float(res["EndTime"])
+            if not (end_time < state_start_time or state_end_time < start_time):
+                # There is some overlap with a state
+                self.parent.neem_interface.prolog.ensure_once(
+                    f"kb_project(holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
+        return situation_transition_iri
+
     def _assert_situation_transition_for_action(self, action_iri: str, initial_situation: str,
                                                 terminal_situation: str) -> str:
-        agent = self.parent.neem_interface.prolog.ensure_once(f"kb_call(is_performed_by({atom(action_iri)}, Agent))")[
-            "Agent"]
-        situation_transition_iri = self.parent.neem_interface.assert_situation(agent, [],
-                                                                               'http://www.ease-crc.org/ont/SOMA.owl#SituationTransition')
+        res = self.parent.neem_interface.prolog.ensure_once(f"kb_call(has_time_interval({atom(action_iri)}, StartTime, EndTime))")
+        start_time = float(res["StartTime"])
+        end_time = float(res["EndTime"])
+        situation_transition_iri = self._assert_situation_transition_manifesting_during_interval(start_time, end_time)
         self.parent.neem_interface.prolog.ensure_once(f"""
             kb_project([
                 holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasInitialSituation', {atom(initial_situation)}),

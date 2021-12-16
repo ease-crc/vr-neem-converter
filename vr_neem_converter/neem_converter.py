@@ -134,7 +134,7 @@ class VRNEEMConverter:
                 # print(f"Writing TF for {obj['id']}")
                 datapoints.append(
                     Datapoint.from_unreal(ts, fully_qualified_name, "world", obj["pose"][:3],
-                                          Rotation.from_quat(obj["pose"][3:])))
+                                          obj["pose"][3:]))
 
             # 'skel_individuals' are the 2 hands
             for hand in document["skel_individuals"]:
@@ -147,7 +147,7 @@ class VRNEEMConverter:
 
                 # TF of the hand itself
                 datapoints.append(
-                    Datapoint.from_unreal(ts, hand_id, "world", hand["pose"][:3], Rotation.from_quat(hand["pose"][3:])))
+                    Datapoint.from_unreal(ts, hand_id, "world", hand["pose"][:3], hand["pose"][3:]))
 
                 # Just extract the fingers I care about
                 # The hand has 20 bones: Thumb tip is 3, Index tip is 7
@@ -159,8 +159,7 @@ class VRNEEMConverter:
                     else:
                         continue
                     datapoints.append(
-                        Datapoint.from_unreal(ts, bone_id, "world", bone["pose"][:3],
-                                              Rotation.from_quat(bone["pose"][3:])))
+                        Datapoint.from_unreal(ts, bone_id, "world", bone["pose"][:3], bone["pose"][3:]))
         self.neem_interface.assert_tf_trajectory(datapoints)
 
     def _assert_events(self, owl_filepath: str):
@@ -232,9 +231,9 @@ def main(args):
                                      agent_indi_name="http://knowrob.org/kb/vr_agent.owl#VRAgent_0",
                                      agent_urdf="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/urdf/vr_agent.urdf",
                                      env_owl="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/owl/supermarket.owl",
-                                     env_indi_name="http://knowrob.org/kb/supermarket.owl#Supermarket",
+                                     env_indi_name="http://knowrob.org/kb/supermarket.owl#Supermarket_VR_0",
                                      env_urdf="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/urdf/dm_room_vr.urdf",
-                                     env_urdf_prefix="http://knowrob.org/kb/supermarket.owl",
+                                     env_urdf_prefix="http://knowrob.org/kb/supermarket.owl#",
                                      end_effector_class_name="http://knowrob.org/kb/knowrob.owl#GenesisRightHand")
     neem_converter.convert(args.output_dir)
 

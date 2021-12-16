@@ -38,6 +38,11 @@ class NEEMPlotter:
 
         # Object positions
         for object_iri, object_traj in object_trajs.items():
+            if len(object_traj) == 0:
+                continue
+            first_pos = object_traj[0].pos
+            first_ori = object_traj[0].ori.as_quat()
+            print(f"Object {object_iri}: {first_pos[0]:.4f} {first_pos[1]:.4f} {first_pos[2]:.4f} {first_ori[0]:.4f} {first_ori[1]:.4f} {first_ori[2]:.4f} {first_ori[3]:.4f}")
             timestamps = [dp.timestamp for dp in object_traj]
             for dim in range(3):
                 data = [dp.pos[dim] for dp in object_traj]
@@ -62,7 +67,11 @@ def main(args):
     plotter.plot_tf(index_iri="http://knowrob.org/kb/ameva_log.owl#_hbZuZHsuk6Nqw-a8JyK4w",  # Index finger
                     thumb_iri="http://knowrob.org/kb/ameva_log.owl#jioI4tGSAkad0W91pTKUrw",  # Thumb
                     hand_iri="http://knowrob.org/kb/ameva_log.owl#BENamAV8rkibLIBc8asHhQ",   # Hand
-                    other_objects=[])
+                    other_objects=["http://knowrob.org/kb/ameva_log.owl#xV-vxMHrR0GJBOzkrti7FA",    # HangingDummy
+                                   "http://knowrob.org/kb/ameva_log.owl#VAyxpxfxpU-6w0a_2WHSSA",    # ShelfSystem
+                                   "http://knowrob.org/kb/ameva_log.owl#9jDlRIK1sU6wHIWg2FR13w",    # MountingBar
+                                   "http://knowrob.org/kb/ameva_log.owl#tMwn8o6kC0aDQZSrcgRqwQ"     # MountingBar
+                                   ])
 
 
 if __name__ == '__main__':
