@@ -53,6 +53,8 @@ class EventConverter:
         grasped_object = indi.objectActedOn[0].iri
         state_iri = self._assert_state([gripper, grasped_object], start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#GraspState')
+
+        # Assert corresponding situation and role binding
         situation_iri = self._assert_situation_for_state(state_iri, [gripper, grasped_object])
         self.parent.neem_interface.prolog.ensure_once(f"""
             kb_project(object_grasped_in_situation({atom(grasped_object)}, {atom(gripper)}, {atom(situation_iri)})) 
@@ -74,6 +76,8 @@ class EventConverter:
         participants = [thing.iri for thing in indi.inContact]
         state_iri = self._assert_state(participants, start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#ContactState')
+
+        # Assert corresponding situation and role binding
         situation_iri = self._assert_situation_for_state(state_iri, participants)
         self.parent.neem_interface.prolog.ensure_once(f"""
             kb_project(objects_touch_in_situation({atom(participants[0])}, {atom(participants[1])}, {atom(situation_iri)}))
@@ -92,6 +96,8 @@ class EventConverter:
         participants = [supportee, supporter]
         state_iri = self._assert_state(participants, start_time, end_time,
                                        state_type='http://www.ease-crc.org/ont/SOMA.owl#SupportState')
+
+        # Assert corresponding situation and role binding
         situation_iri = self._assert_situation_for_state(state_iri, participants)
         self.parent.neem_interface.prolog.ensure_once(f"""
                 kb_project(object_supported_in_situation({atom(supportee)}, {atom(supporter)}, {atom(situation_iri)}))
@@ -115,10 +121,6 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#PickingUp",
                                                                         start_time=start_time, end_time=end_time)
-        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
-        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
-        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
-                                                                            terminal_situation)
         return action_iri
 
     def convert_pregrasp_situation(self, indi) -> str:
@@ -134,10 +136,6 @@ class EventConverter:
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#Grasping",
                                                                         start_time=start_time, end_time=end_time)
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
-        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
-        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
-        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
-                                                                            terminal_situation)                    
         return action_iri
 
     def convert_put_down_situation(self, indi) -> str:
@@ -157,10 +155,6 @@ class EventConverter:
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#Reaching",
                                                                         start_time=start_time, end_time=end_time)
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#GoalRole")
-        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [actor, obj])
-        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [actor, obj])
-        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
-                                                                            terminal_situation)
         return action_iri
 
     def convert_sliding_situation(self, indi) -> str:
@@ -176,10 +170,6 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalTask",
                                                                         start_time=start_time, end_time=end_time)
-        initial_situation = self._assert_situation_manifesting_at_timestamp(start_time, [])
-        terminal_situation = self._assert_situation_manifesting_at_timestamp(end_time, [])
-        situation_transition = self._assert_situation_transition_for_action(action_iri, initial_situation,
-                                                                            terminal_situation)
         return action_iri
 
     def _assert_situation_manifesting_at_timestamp(self, timestamp: float, objects: List[str]) -> str:

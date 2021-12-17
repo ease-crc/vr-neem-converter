@@ -4,7 +4,7 @@ Copyright (C) 2021 ArtiMinds Robotics GmbH
 import os
 import shutil
 from argparse import ArgumentParser
-from typing import Tuple
+from typing import Tuple, List
 
 from neem_interface_python.neem_interface import NEEMInterface, Episode
 from neem_interface_python.rosprolog_client import atom
@@ -14,7 +14,8 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from scipy.spatial.transform import Rotation
 from event_converters import EventConverter
-from vr_neem_converter.utils import load_ontology, assert_agent_and_hand
+from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, situations_manifesting_at_timestamp, \
+    situations_manifesting_during_interval
 
 
 class VRNEEMConverter:
@@ -170,22 +171,26 @@ class VRNEEMConverter:
         onto = load_ontology(owl_filepath)
         event_individuals = onto.search(inEpisode="*")
         event_converter = EventConverter(self)
+        event_times = self._assert_states(event_converter, event_individuals)
+        action_times = self._assert_known_actions(event_converter, event_individuals, event_times)
+        event_times = list(set(event_times))    # deduplicate
+        event_times.sort()
+        all_actions = self._assert_anonymous_actions(event_converter, action_times, event_times)
+
+        self._assert_situation_transition_and_situations_for_actions(all_actions)
+
+    def _assert_states(self, event_converter, event_individuals) -> List[float]:
         event_times = []
-        # States
+        # States; each state also has one corresponding Situation with relations and role bindings
         for event_individual in filter(lambda event_indi: event_converter.is_state(event_indi), event_individuals):
             state_iri = event_converter.convert(event_individual)
-            # is_contact_state = self.neem_interface.prolog.once(f"""
-            #     kb_call([
-            #         holds(StateType, dul:'classifies',  {atom(state_iri)}),
-            #         instance_of(StateType, 'http://www.ease-crc.org/ont/SOMA.owl#ContactState')
-            #     ])
-            # """) is not None
-            # if is_contact_state:
             res = self.neem_interface.prolog.ensure_once(
                 f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
             event_times.append(float(res["StartTime"]))
             event_times.append(float(res["EndTime"]))
-        # Actions
+        return event_times
+
+    def _assert_known_actions(self, event_converter, event_individuals, event_times) -> dict:
         action_times = {}
         for event_individual in filter(lambda event_indi: event_converter.is_action(event_indi), event_individuals):
             action_iri = event_converter.convert(event_individual)
@@ -195,22 +200,56 @@ class VRNEEMConverter:
                                         "end_time": float(res["EndTime"])}
             event_times.append(float(res["StartTime"]))
             event_times.append(float(res["EndTime"]))
-        event_times = list(set(event_times))    # deduplicate
-        event_times.sort()
+        return action_times
+
+    def _assert_anonymous_actions(self, event_converter, action_times, event_times) -> List[str]:
+        all_actions = []
         # Anonymous actions for force-dynamic events which don't have actions
         for i in range(len(event_times) - 1):
             start_time = event_times[i]
-            end_time = event_times[i+1]
+            end_time = event_times[i + 1]
             have_action_during_interval = False
             for action_iri, action_time_dict in action_times.items():
                 if action_time_dict["start_time"] <= start_time and action_time_dict["end_time"] >= end_time:
                     have_action_during_interval = True
+                    all_actions.append(action_iri)
                     break
             if have_action_during_interval:
                 continue
             # There is a gap in the timeline --> create anonymous action
             action_iri = event_converter.create_anonymous_action(start_time, end_time)
+            all_actions.append(action_iri)
             print(f"Created anonymous action: {action_iri} ({start_time} -> {end_time})")
+        return all_actions
+
+    def _assert_situation_transition_and_situations_for_actions(self, actions: List[str]):
+        """
+        Each action has a Situation transition
+            * which has N initialSituations, which manifest at start time
+            * which has M terminalSituations, which manifest at end time
+        Each action also has the situations of the states with which it (fully) overlaps
+        """
+        for action_iri in actions:
+            res = self.neem_interface.prolog.ensure_once(
+                f"kb_call(has_time_interval({atom(action_iri)}, StartTime, EndTime))")
+            start_time = float(res["StartTime"])
+            end_time = float(res["EndTime"])
+            situations_initial = situations_manifesting_at_timestamp(self.neem_interface, start_time)
+            situations_terminal = situations_manifesting_at_timestamp(self.neem_interface, end_time)
+            situations_during = situations_manifesting_during_interval(self.neem_interface, start_time, end_time)
+            situation_transition_iri = self.neem_interface.assert_situation(self.agent, [],
+                                                                            'http://www.ease-crc.org/ont/SOMA.owl#SituationTransition')
+            self.neem_interface.prolog.ensure_once(
+                f"kb_project(holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(action_iri)}))")
+            for situation in situations_initial:
+                self.neem_interface.prolog.ensure_once(
+                    f"kb_project(holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasInitialSituation', {atom(situation)}))")
+            for situation in situations_terminal:
+                self.neem_interface.prolog.ensure_once(
+                    f"kb_project(holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasTerminalSituation', {atom(situation)}))")
+            for situation in situations_during:
+                self.neem_interface.prolog.ensure_once(
+                    f"kb_project(holds({atom(situation)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(action_iri)}))")
 
     def _is_active_object(self, obj_iri: str, event_ontology: Ontology) -> bool:
         """
