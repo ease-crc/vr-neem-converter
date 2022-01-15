@@ -8,11 +8,10 @@ from typing import Tuple, List
 
 from neem_interface_python.neem_interface import NEEMInterface, Episode
 from neem_interface_python.rosprolog_client import atom
-from neem_interface_python.utils import Datapoint
+from neem_interface_python.utils.utils import Datapoint
 from owlready2 import Ontology
 from pymongo import MongoClient
 from pymongo.collection import Collection
-from scipy.spatial.transform import Rotation
 from event_converters import EventConverter
 from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, situations_manifesting_at_timestamp, \
     situations_manifesting_during_interval
@@ -60,9 +59,10 @@ class VRNEEMConverter:
             os.makedirs(episode_output_dir)
 
             # Create new episode and make assertions
-            with Episode(self.neem_interface, "http://www.artiminds.com/kb/artm.owl#PickAndPlaceTask", self.env_owl,
+            with Episode(self.neem_interface, "http://www.artiminds.com/kb/artm.owl#PickAndPlaceTask",
+                         self.env_owl,
                          self.env_indi_name,
-                         self.env_urdf, self.env_urdf_prefix, self.agent_owl, self.agent, self.agent_urdf,
+                         self.env_urdf, self.agent_owl, self.agent, self.agent_urdf,
                          episode_output_dir) as self.episode:
                 semantic_map_owl_filepath = os.path.join(self.vr_neem_dir, next(
                     filter(lambda fn: fn.endswith("SM.owl"), os.listdir(self.vr_neem_dir))))
