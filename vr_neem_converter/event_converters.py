@@ -63,8 +63,7 @@ class EventConverter:
         return state_iri
 
     def convert_slicing_something(self, indi) -> str:
-        # raise NotImplementedError()
-        pass
+        raise NotImplementedError()
 
     def convert_touching_situation(self, indi) -> str:
         """
@@ -106,8 +105,7 @@ class EventConverter:
         return state_iri
 
     def convert_container_manipulation(self, indi) -> str:
-        # raise NotImplementedError()
-        pass
+        raise NotImplementedError()
 
     def convert_pick_up_situation(self, indi) -> str:
         """
@@ -135,12 +133,27 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#Grasping",
                                                                         start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, actor, "http://www.ease-crc.org/ont/SOMA.owl#AgentRole")
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
         return action_iri
 
     def convert_put_down_situation(self, indi) -> str:
-        # raise NotImplementedError()
-        pass
+        """
+        PutDown is an ACTION, called "PutDown" in the HTML viz, mapped to a PhysicalAction for task PuttingDown in SOMA
+        """
+        start_time = self._extract_timestamp(indi.startTime[0])
+        end_time = self._extract_timestamp(indi.endTime[0])
+        actor = indi.performedBy[0].iri
+        obj = indi.objectActedOn[0].iri
+        action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
+                                                                        sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
+                                                                        task_type="http://www.ease-crc.org/ont/SOMA.owl#PuttingDown",
+                                                                        start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, actor,
+                                                             "http://www.ease-crc.org/ont/SOMA.owl#AgentRole")
+        self.parent.neem_interface.add_participant_with_role(action_iri, obj,
+                                                             "http://www.ease-crc.org/ont/SOMA.owl#Patient")
+        return action_iri
 
     def convert_reaching_situation(self, indi) -> str:
         """
@@ -154,16 +167,41 @@ class EventConverter:
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#Reaching",
                                                                         start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, actor, "http://www.ease-crc.org/ont/SOMA.owl#AgentRole")
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#GoalRole")
         return action_iri
 
     def convert_sliding_situation(self, indi) -> str:
-        # raise NotImplementedError()
-        pass
+        """
+        Sliding is an ACTION, called "Slide" in the HTML viz, mapped to a PhysicalAction for task http://www.artiminds.com/kb/artm.owl#Sliding in SOMA
+        """
+        start_time = self._extract_timestamp(indi.startTime[0])
+        end_time = self._extract_timestamp(indi.endTime[0])
+        actor = indi.performedBy[0].iri
+        obj = indi.objectActedOn[0].iri
+        action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
+                                                                        sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
+                                                                        task_type="http://www.artiminds.com/kb/artm.owl#Sliding",
+                                                                        start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, actor, "http://www.ease-crc.org/ont/SOMA.owl#AgentRole")
+        self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
+        return action_iri
 
     def convert_transporting_situation(self, indi) -> str:
-        # raise NotImplementedError()
-        pass
+        """
+        Transporting is an ACTION, called "Transport" in the HTML viz, mapped to a PhysicalAction for task Transporting in SOMA
+        """
+        start_time = self._extract_timestamp(indi.startTime[0])
+        end_time = self._extract_timestamp(indi.endTime[0])
+        actor = indi.performedBy[0].iri
+        obj = indi.objectActedOn[0].iri
+        action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
+                                                                        sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
+                                                                        task_type="http://www.ease-crc.org/ont/SOMA.owl#Transporting",
+                                                                        start_time=start_time, end_time=end_time)
+        self.parent.neem_interface.add_participant_with_role(action_iri, actor, "http://www.ease-crc.org/ont/SOMA.owl#AgentRole")
+        self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
+        return action_iri
 
     def create_anonymous_action(self, start_time: float, end_time: float) -> str:
         action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
@@ -180,7 +218,7 @@ class EventConverter:
                 f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
             state_start_time = float(res["StartTime"])
             state_end_time = float(res["EndTime"])
-            if state_start_time <= timestamp <= state_end_time:
+            if state_start_time <= timestamp < state_end_time:
                 self.parent.neem_interface.prolog.ensure_once(
                     f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
         return situation_iri

@@ -4,14 +4,17 @@ Copyright (C) 2021 ArtiMinds Robotics GmbH
 import os
 import shutil
 from argparse import ArgumentParser
+from pathlib import Path
 from typing import Tuple, List
 
+from tqdm import tqdm
 from neem_interface_python.neem_interface import NEEMInterface, Episode
 from neem_interface_python.rosprolog_client import atom
 from neem_interface_python.utils.utils import Datapoint
 from owlready2 import Ontology
 from pymongo import MongoClient
 from pymongo.collection import Collection
+
 from event_converters import EventConverter
 from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, situations_manifesting_at_timestamp, \
     situations_manifesting_during_interval
@@ -47,6 +50,7 @@ class VRNEEMConverter:
         os.system(f"mongorestore {os.path.join(self.vr_neem_dir, 'dump')}")
         db = self.mongo_client[db_name]
 
+        all_event_owl_filepaths = Path(os.path.join(self.vr_neem_dir, "SemLog", "Episodes")).glob("**/*_ED.owl")
         for collection_name in db.list_collection_names():
             if collection_name.endswith(".meta"):
                 continue
@@ -58,32 +62,33 @@ class VRNEEMConverter:
                 shutil.rmtree(episode_output_dir)
             os.makedirs(episode_output_dir)
 
+            semantic_map_dir = os.path.join(self.vr_neem_dir, "SemLog", "SemanticMap")
+            semantic_map_owl_filename = next(filter(lambda fn: fn.endswith("SM.owl"), os.listdir(semantic_map_dir)))
+            semantic_map_owl_filepath = os.path.join(semantic_map_dir, semantic_map_owl_filename)
             # Create new episode and make assertions
             with Episode(self.neem_interface, "http://www.artiminds.com/kb/artm.owl#PickAndPlaceTask",
                          self.env_owl,
                          self.env_indi_name,
                          self.env_urdf, self.agent_owl, self.agent, self.agent_urdf,
                          episode_output_dir) as self.episode:
-                semantic_map_owl_filepath = os.path.join(self.vr_neem_dir, next(
-                    filter(lambda fn: fn.endswith("SM.owl"), os.listdir(self.vr_neem_dir))))
-                event_owl_filepath = os.path.join(self.vr_neem_dir, f"{collection_name}_ED.owl")
+                event_owl_filepath = next(filter(lambda fp: collection_name in str(fp), all_event_owl_filepaths))
                 self.agent, self.all_objects, self.active_objects = self._assert_objects_and_agent(
                     semantic_map_owl_filepath, event_owl_filepath)
                 self._assert_events(event_owl_filepath)
                 self._assert_tf(db[collection_name])
 
-            break  # TODO: Remove
-
     def _assert_objects_and_agent(self, semantic_map_owl_filepath: str, event_owl_filepath: str) -> Tuple[
         str, dict, dict]:
         semantic_map = load_ontology(semantic_map_owl_filepath)
+        print(f"Loading {event_owl_filepath}")
         event_ontology = load_ontology(event_owl_filepath)
         known_classes = [x["Class"] for x in self.neem_interface.prolog.all_solutions("is_class(Class)")]
         objects = {}
         active_objects = {}
 
         # Assert objects of known types as individuals of that type, else just as dul:'PhysicalObject'
-        for obj_indi in semantic_map.individuals():
+        print("Asserting object types for individuals...")
+        for obj_indi in tqdm(semantic_map.individuals()):
             if obj_indi.is_a[0].iri in known_classes:
                 obj_type = obj_indi.is_a[0].iri
             else:
