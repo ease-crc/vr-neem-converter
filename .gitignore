@@ -141,3 +141,4 @@ cython_debug/
 .vscode
 testing/resources
 output
+output_old

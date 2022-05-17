@@ -70,7 +70,8 @@ def main(args):
                     other_objects=["http://knowrob.org/kb/ameva_log.owl#xV-vxMHrR0GJBOzkrti7FA",    # HangingDummy
                                    "http://knowrob.org/kb/ameva_log.owl#VAyxpxfxpU-6w0a_2WHSSA",    # ShelfSystem
                                    "http://knowrob.org/kb/ameva_log.owl#9jDlRIK1sU6wHIWg2FR13w",    # MountingBar
-                                   "http://knowrob.org/kb/ameva_log.owl#tMwn8o6kC0aDQZSrcgRqwQ"     # MountingBar
+                                   "http://knowrob.org/kb/ameva_log.owl#tMwn8o6kC0aDQZSrcgRqwQ",    # MountingBar
+                                   "http://knowrob.org/kb/ameva_log.owl#SrBxKF-Nzke1IHqGuc-PkA"     # ShoppingBasket
                                    ])
 
 
