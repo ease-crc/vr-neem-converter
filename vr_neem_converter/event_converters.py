@@ -1,9 +1,8 @@
 """
 Copyright (C) 2021 ArtiMinds Robotics GmbH
 """
-from typing import Tuple, List
+from typing import List
 
-from neem_interface_python.neem_interface import NEEMInterface, Episode
 from neem_interface_python.rosprolog_client import atom
 
 
@@ -13,17 +12,17 @@ class EventConverter:
         self.asserted_states = []
 
         self.evt_converters = {
-            "GraspingSomething": self.convert_grasping_something,
-            "SlicingSomething": self.convert_slicing_something,
-            "TouchingSituation": self.convert_touching_situation,
-            "SupportedBySituation": self.convert_supported_by_situation,
-            "ContainerManipulation": self.convert_container_manipulation,
-            "PickUpSituation": self.convert_pick_up_situation,
-            "PreGraspSituation": self.convert_pregrasp_situation,
-            "PutDownSituation": self.convert_put_down_situation,
-            "ReachingForSomething": self.convert_reaching_situation,
-            "SlidingSituation": self.convert_sliding_situation,
-            "TransportingSituation": self.convert_transporting_situation
+            "GraspingSomething": self.convert_grasp_state,
+            "SlicingSomething": self.convert_slicing_action,
+            "TouchingSituation": self.convert_contact_state,
+            "SupportedBySituation": self.convert_support_state,
+            "ContainerManipulation": self.convert_container_manipulation_action,
+            "PickUpSituation": self.convert_pick_up_action,
+            "PreGraspSituation": self.convert_pregrasp_action,
+            "PutDownSituation": self.convert_put_down_action,
+            "ReachingForSomething": self.convert_reaching_action,
+            "SlidingSituation": self.convert_sliding_action,
+            "TransportingSituation": self.convert_transporting_action
         }
 
     def _extract_timestamp(self, timepoint_indi):
@@ -42,7 +41,9 @@ class EventConverter:
     def is_action(event_indi) -> bool:
         return not EventConverter.is_state(event_indi)
 
-    def convert_grasping_something(self, indi) -> str:
+    ### STATES ######################################################################################################################
+
+    def convert_grasp_state(self, indi) -> str:
         """
         Grasping is a STATE, called "Grasp" in the HTML viz, called "GraspState" in SOMA
         Gripper and Graspee are related via http://www.artiminds.com/kb/knowrob_industrial.owl#GraspRelation
@@ -62,12 +63,9 @@ class EventConverter:
         self.asserted_states.append(state_iri)
         return state_iri
 
-    def convert_slicing_something(self, indi) -> str:
-        raise NotImplementedError()
-
-    def convert_touching_situation(self, indi) -> str:
+    def convert_contact_state(self, indi) -> str:
         """
-        TouchingSituation is a  STATE, called "Contact" in the HTML viz, called "ContactState" in SOMA
+        Contact is a STATE, called "Contact" in the HTML viz, called "ContactState" in SOMA
         Objects in contact are related via http://www.artiminds.com/kb/knowrob_industrial.owl#ContactRelation
         """
         start_time = self._extract_timestamp(indi.startTime[0])
@@ -84,7 +82,7 @@ class EventConverter:
         self.asserted_states.append(state_iri)
         return state_iri
 
-    def convert_supported_by_situation(self, indi) -> str:
+    def convert_support_state(self, indi) -> str:
         """
         SupportedBy is a STATE, called "SupportedBy" in the HTML viz, called "SupportState" in SOMA
         """
@@ -104,10 +102,26 @@ class EventConverter:
         self.asserted_states.append(state_iri)
         return state_iri
 
-    def convert_container_manipulation(self, indi) -> str:
-        raise NotImplementedError()
+    def _assert_state(self, participants: List[str], start_time: float, end_time: float,
+                      state_type='http://www.ease-crc.org/ont/SOMA.owl#State') -> str:
+        if self.parent.agent not in participants:  # Enforce that the agent is always participant of the state
+            participants.append(self.parent.agent)
+        return self.parent.neem_interface.assert_state(participants, start_time, end_time,
+                                                       state_type=state_type)
 
-    def convert_pick_up_situation(self, indi) -> str:
+    def _assert_situation_for_state(self, state_iri: str, objects: List[str]) -> str:
+        """
+        Semantics: A Situation which manifestsIn a state is valid for the entirety of the State
+        """
+        situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
+                                                                    'http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#Situation')
+        self.parent.neem_interface.prolog.ensure_once(
+            f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
+        return situation_iri
+
+    ### ACTIONS ######################################################################################################################
+
+    def convert_pick_up_action(self, indi) -> str:
         """
         PickUp is an ACTION, called PickUp in the HTML viz, mapped to a PhysicalAction for a task soma:PickingUp in SOMA
         """
@@ -121,7 +135,7 @@ class EventConverter:
                                                                         start_time=start_time, end_time=end_time)
         return action_iri
 
-    def convert_pregrasp_situation(self, indi) -> str:
+    def convert_pregrasp_action(self, indi) -> str:
         """
         PreGrasp is an ACTION, called "PreGrasp" in the HTML viz, mapped to a PhysicalAction for a task soma:Grasping in SOMA
         """
@@ -137,7 +151,7 @@ class EventConverter:
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
         return action_iri
 
-    def convert_put_down_situation(self, indi) -> str:
+    def convert_put_down_action(self, indi) -> str:
         """
         PutDown is an ACTION, called "PutDown" in the HTML viz, mapped to a PhysicalAction for task PuttingDown in SOMA
         """
@@ -155,7 +169,7 @@ class EventConverter:
                                                              "http://www.ease-crc.org/ont/SOMA.owl#Patient")
         return action_iri
 
-    def convert_reaching_situation(self, indi) -> str:
+    def convert_reaching_action(self, indi) -> str:
         """
         Reaching is an ACTION, called "Reach" in the HTML viz, mapped to a PhysicalAction for task Reaching in SOMA
         """
@@ -171,7 +185,7 @@ class EventConverter:
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#GoalRole")
         return action_iri
 
-    def convert_sliding_situation(self, indi) -> str:
+    def convert_sliding_action(self, indi) -> str:
         """
         Sliding is an ACTION, called "Slide" in the HTML viz, mapped to a PhysicalAction for task http://www.artiminds.com/kb/artm.owl#Sliding in SOMA
         """
@@ -187,7 +201,7 @@ class EventConverter:
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
         return action_iri
 
-    def convert_transporting_situation(self, indi) -> str:
+    def convert_transporting_action(self, indi) -> str:
         """
         Transporting is an ACTION, called "Transport" in the HTML viz, mapped to a PhysicalAction for task Transporting in SOMA
         """
@@ -203,12 +217,33 @@ class EventConverter:
         self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
         return action_iri
 
+    def convert_slicing_action(self, indi) -> str:
+        raise NotImplementedError()
+
+    def convert_container_manipulation_action(self, indi) -> str:
+        raise NotImplementedError()
+
+    ### ANONYMOUS ACTIONS #################################################################################################################
+
     def create_anonymous_action(self, start_time: float, end_time: float) -> str:
         action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
                                                                         sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
                                                                         task_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalTask",
                                                                         start_time=start_time, end_time=end_time)
         return action_iri
+
+    def _assert_situation_manifesting_at_timestamp(self, timestamp: float, objects: List[str]) -> str:
+        situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
+                                                                    'http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#Situation')
+        for state_iri in self.asserted_states:
+            res = self.parent.neem_interface.prolog.ensure_once(
+                f"kb_call(has_time_interval({atom(state_iri)}, StartTime, EndTime))")
+            state_start_time = float(res["StartTime"])
+            state_end_time = float(res["EndTime"])
+            if state_start_time <= timestamp < state_end_time:
+                self.parent.neem_interface.prolog.ensure_once(
+                    f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
+        return situation_iri
 
     def _assert_situation_manifesting_at_timestamp(self, timestamp: float, objects: List[str]) -> str:
         situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
@@ -252,16 +287,3 @@ class EventConverter:
         """)
         return situation_transition_iri
 
-    def _assert_situation_for_state(self, state_iri: str, objects: List[str]) -> str:
-        situation_iri = self.parent.neem_interface.assert_situation(self.parent.agent, objects,
-                                                                    'http://www.ontologydesignpatterns.org/ont/dul/DUL.owl#Situation')
-        self.parent.neem_interface.prolog.ensure_once(
-            f"kb_project(holds({atom(situation_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(state_iri)}))")
-        return situation_iri
-
-    def _assert_state(self, participants: List[str], start_time: float, end_time: float,
-                      state_type='http://www.ease-crc.org/ont/SOMA.owl#State') -> str:
-        if self.parent.agent not in participants:  # Enforce that the agent is always participant of the state
-            participants.append(self.parent.agent)
-        return self.parent.neem_interface.assert_state(participants, start_time, end_time,
-                                                       state_type=state_type)

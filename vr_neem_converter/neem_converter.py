@@ -16,9 +16,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 
 from event_converters import EventConverter
-from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, situations_manifesting_at_timestamp, \
-    situations_manifesting_during_interval
-
+from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, situations_manifesting_at_timestamp
 
 class VRNEEMConverter:
     def __init__(self, vr_neem_dir: str,
@@ -52,6 +50,8 @@ class VRNEEMConverter:
 
         all_event_owl_filepaths = Path(os.path.join(self.vr_neem_dir, "SemLog", "Episodes")).glob("**/*_ED.owl")
         for collection_name in db.list_collection_names():
+            # if "SC2_HD_4" not in collection_name:
+            #     continue
             if collection_name.endswith(".meta"):
                 continue
             documents = list(db[collection_name].find({}))
@@ -170,7 +170,7 @@ class VRNEEMConverter:
 
     def _assert_events(self, owl_filepath: str):
         """
-        Assert the events as subactions with state transitions into KnowRob
+        Assert states and actions into KnowRob.
         :param owl_filepath: Path to OWL file containing event data, e.g. testing/resources/episode_1/set_table_events.owl
         """
         onto = load_ontology(owl_filepath)
@@ -185,6 +185,13 @@ class VRNEEMConverter:
         self._assert_situation_transition_and_situations_for_actions(all_actions)
 
     def _assert_states(self, event_converter, event_individuals) -> List[float]:
+        """
+        Assert the state timeline into KnowRob.
+        State semantics (see EventConverter):
+            * A State is a durative Event (it has a time interval)
+            * Multiple Situations may manifestIn a State
+            * If a Situation manifestsIn a State, it holds for the entire duration of the State
+        """
         event_times = []
         # States; each state also has one corresponding Situation with relations and role bindings
         for event_individual in filter(lambda event_indi: event_converter.is_state(event_indi), event_individuals):
@@ -196,6 +203,16 @@ class VRNEEMConverter:
         return event_times
 
     def _assert_known_actions(self, event_converter, event_individuals, event_times) -> dict:
+        """
+        Assert the action timeline into Knowrob. This only takes into account the actions which have been provided by USemLog.
+        Action semantics (see EventConverter):
+            * An Action is a durative Event (it has a time interval)
+            * Multiple Situations may manifestIn an Action
+            * If a Situation manifestsIn an Action, it holds for the entire duration of the Action
+            * Multiple SituationTransitions may manifestIn an Action
+                * Their initialSituations is the Set of Situations which manifestIn States overlapping (exclusive) with the beginning of the Action;
+                  their terminalSituations is the Set of Situations which manifestIn States overlapping (exclusive) with the end of the Action
+        """
         action_times = {}
         for event_individual in filter(lambda event_indi: event_converter.is_action(event_indi), event_individuals):
             action_iri = event_converter.convert(event_individual)
@@ -208,6 +225,11 @@ class VRNEEMConverter:
         return action_times
 
     def _assert_anonymous_actions(self, event_converter, action_times, event_times) -> List[str]:
+        """
+        Assert new "anonymous" actions (instances of PhysicalAction) between state transitions which don't have actions yet.
+        This enforces the rule that there can't be "gaps" in the timeline - because we don't exactly know at what precise moment actions
+        begin or end, we make sure that "some action" is always occurring, and that "some other action" occurs when there is a state transition.
+        """
         all_actions = []
         # Anonymous actions for force-dynamic events which don't have actions
         for i in range(len(event_times) - 1):
@@ -241,7 +263,7 @@ class VRNEEMConverter:
             end_time = float(res["EndTime"])
             situations_initial = situations_manifesting_at_timestamp(self.neem_interface, start_time)
             situations_terminal = situations_manifesting_at_timestamp(self.neem_interface, end_time)
-            situations_during = situations_manifesting_during_interval(self.neem_interface, start_time, end_time)
+            situations_during = list(set(situations_initial + situations_terminal))
             situation_transition_iri = self.neem_interface.assert_situation(self.agent, [],
                                                                             'http://www.ease-crc.org/ont/SOMA.owl#SituationTransition')
             self.neem_interface.prolog.ensure_once(
