@@ -9,12 +9,14 @@ from neem_utils.knowrob_queries import parse_tf_traj
 from pymongo import MongoClient
 import matplotlib.pyplot as plt
 
+plt.style.use("bmh")
+
 
 class NEEMPlotter:
     def __init__(self, neem: NEEM):
         self.neem = neem
 
-    def plot_tf(self, hand_iri: str, index_iri: str, thumb_iri: str, other_objects: List[str]):
+    def plot_tf(self, hand_iri: str, index_iri: str, thumb_iri: str, other_objects: List[str], compact=False):
         objects = [hand_iri, index_iri, thumb_iri] + other_objects
         fig, axes = plt.subplots(4, 1)
 
@@ -58,24 +60,30 @@ class NEEMPlotter:
             gripper_timestamps.append(thumb_traj[i].timestamp)
         axes[3].plot(gripper_timestamps, gripper_openings)
 
-        fig.legend(labels=[object_iri for object_iri in object_trajs.keys()])
+        if compact:
+            for ax in axes:
+                ax.xaxis.set_ticklabels([])
+        else:
+            fig.legend(labels=[object_iri for object_iri in object_trajs.keys()])
         plt.show()
 
 
 def main(args):
     plotter = NEEMPlotter(NEEM.load(args.neem_path))
-    plotter.plot_tf(index_iri="http://knowrob.org/kb/ameva_log.owl#_hbZuZHsuk6Nqw-a8JyK4w",  # Index finger
-                    thumb_iri="http://knowrob.org/kb/ameva_log.owl#jioI4tGSAkad0W91pTKUrw",  # Thumb
-                    hand_iri="http://knowrob.org/kb/ameva_log.owl#BENamAV8rkibLIBc8asHhQ",   # Hand
-                    other_objects=["http://knowrob.org/kb/ameva_log.owl#xV-vxMHrR0GJBOzkrti7FA",    # HangingDummy
+    plotter.plot_tf(index_iri="http://knowrob.org/kb/ameva_log.owl#azTP7YBRGU-4YZb08OoOmA",  # Index finger
+                    thumb_iri="http://knowrob.org/kb/ameva_log.owl#11vAk9_Mb0q6TURP_Z4teQ",  # Thumb
+                    hand_iri="http://knowrob.org/kb/ameva_log.owl#tC3DKRxnmkqDhmI0MluPuA",   # Hand
+                    other_objects=["http://knowrob.org/kb/ameva_log.owl#jM10heVkvUOqhUVFmIxZLA",    # HangingDummy
                                    "http://knowrob.org/kb/ameva_log.owl#VAyxpxfxpU-6w0a_2WHSSA",    # ShelfSystem
                                    "http://knowrob.org/kb/ameva_log.owl#9jDlRIK1sU6wHIWg2FR13w",    # MountingBar
                                    "http://knowrob.org/kb/ameva_log.owl#tMwn8o6kC0aDQZSrcgRqwQ",    # MountingBar
                                    "http://knowrob.org/kb/ameva_log.owl#SrBxKF-Nzke1IHqGuc-PkA"     # ShoppingBasket
-                                   ])
+                                   ],
+                    compact=args.compact)
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("neem_path", type=str)
+    parser.add_argument("--compact", action="store_true", default=False)
     main(parser.parse_args())
