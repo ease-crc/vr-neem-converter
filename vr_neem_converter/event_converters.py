@@ -202,20 +202,7 @@ class EventConverter:
         return action_iri
 
     def convert_transporting_action(self, indi) -> str:
-        """
-        Transporting is an ACTION, called "Transport" in the HTML viz, mapped to a PhysicalAction for task Transporting in SOMA
-        """
-        start_time = self._extract_timestamp(indi.startTime[0])
-        end_time = self._extract_timestamp(indi.endTime[0])
-        actor = indi.performedBy[0].iri
-        obj = indi.objectActedOn[0].iri
-        action_iri = self.parent.neem_interface.add_subaction_with_task(self.parent.episode.top_level_action_iri,
-                                                                        sub_action_type="http://www.ease-crc.org/ont/SOMA.owl#PhysicalAction",
-                                                                        task_type="http://www.ease-crc.org/ont/SOMA.owl#Transporting",
-                                                                        start_time=start_time, end_time=end_time)
-        self.parent.neem_interface.add_participant_with_role(action_iri, actor, "http://www.ease-crc.org/ont/SOMA.owl#AgentRole")
-        self.parent.neem_interface.add_participant_with_role(action_iri, obj, "http://www.ease-crc.org/ont/SOMA.owl#Patient")
-        return action_iri
+        raise NotImplementedError()
 
     def convert_slicing_action(self, indi) -> str:
         raise NotImplementedError()

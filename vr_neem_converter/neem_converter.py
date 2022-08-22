@@ -3,6 +3,7 @@ Copyright (C) 2021 ArtiMinds Robotics GmbH
 """
 import os
 import shutil
+import time
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Tuple, List
@@ -16,7 +17,9 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 
 from event_converters import EventConverter
-from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, situations_manifesting_at_timestamp
+from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, get_initial_situations, \
+    get_terminal_situations, get_runtime_situations
+
 
 class VRNEEMConverter:
     def __init__(self, vr_neem_dir: str,
@@ -43,20 +46,22 @@ class VRNEEMConverter:
         self.active_objects = {}  # Maps object IRI to type for objects involved in interactions with other objects
         self.episode = None
 
-    def convert(self, neem_output_path):
+    def convert(self, neem_output_path, episode_name: str = None):
         db_name = os.listdir(os.path.join(self.vr_neem_dir, "dump"))[0]
         os.system(f"mongorestore {os.path.join(self.vr_neem_dir, 'dump')}")
         db = self.mongo_client[db_name]
 
-        all_event_owl_filepaths = Path(os.path.join(self.vr_neem_dir, "SemLog", "Episodes")).glob("**/*_ED.owl")
+        all_event_owl_filepaths = list(Path(os.path.join(self.vr_neem_dir, "SemLog", "Episodes")).glob("**/*_ED.owl"))
         for collection_name in db.list_collection_names():
-            # if "SC2_HD_4" not in collection_name:
-            #     continue
             if collection_name.endswith(".meta"):
+                continue
+            if episode_name is not None and episode_name not in collection_name:
                 continue
             documents = list(db[collection_name].find({}))
             if len(documents) == 0:
                 continue
+
+            start_time = time.time()
             episode_output_dir = os.path.join(neem_output_path, collection_name)
             if os.path.exists(episode_output_dir):
                 shutil.rmtree(episode_output_dir)
@@ -71,11 +76,12 @@ class VRNEEMConverter:
                          self.env_indi_name,
                          self.env_urdf, self.agent_owl, self.agent, self.agent_urdf,
                          episode_output_dir) as self.episode:
-                event_owl_filepath = next(filter(lambda fp: collection_name in str(fp), all_event_owl_filepaths))
+                event_owl_filepath = list(filter(lambda fp: collection_name in str(fp), all_event_owl_filepaths))[0]
                 self.agent, self.all_objects, self.active_objects = self._assert_objects_and_agent(
-                    semantic_map_owl_filepath, event_owl_filepath)
-                self._assert_events(event_owl_filepath)
+                    semantic_map_owl_filepath, event_owl_filepath.as_posix())
+                self._assert_events(event_owl_filepath.as_posix())
                 self._assert_tf(db[collection_name])
+            print(f"Conversion took {time.time() - start_time:.4f} seconds")
 
     def _assert_objects_and_agent(self, semantic_map_owl_filepath: str, event_owl_filepath: str) -> Tuple[
         str, dict, dict]:
@@ -87,7 +93,8 @@ class VRNEEMConverter:
         active_objects = {}
 
         # Assert objects of known types as individuals of that type, else just as dul:'PhysicalObject'
-        print("Asserting object types for individuals...")
+        all_individuals = list(semantic_map.individuals())
+        print(f"Asserting object types for {len(all_individuals)} individuals...")
         for obj_indi in tqdm(semantic_map.individuals()):
             if obj_indi.is_a[0].iri in known_classes:
                 obj_type = obj_indi.is_a[0].iri
@@ -174,14 +181,15 @@ class VRNEEMConverter:
         :param owl_filepath: Path to OWL file containing event data, e.g. testing/resources/episode_1/set_table_events.owl
         """
         onto = load_ontology(owl_filepath)
-        event_individuals = onto.search(inEpisode="*")
+        event_individuals = set(onto.individuals()).intersection(onto.search(inEpisode="*"))
+        print(f"Asserting state/situation transitions for {len(event_individuals)} event individuals")
         event_converter = EventConverter(self)
         event_times = self._assert_states(event_converter, event_individuals)
         action_times = self._assert_known_actions(event_converter, event_individuals, event_times)
         event_times = list(set(event_times))    # deduplicate
         event_times.sort()
         all_actions = self._assert_anonymous_actions(event_converter, action_times, event_times)
-
+        print(f"NEEM has {len(all_actions)} actions")
         self._assert_situation_transition_and_situations_for_actions(all_actions)
 
     def _assert_states(self, event_converter, event_individuals) -> List[float]:
@@ -215,13 +223,16 @@ class VRNEEMConverter:
         """
         action_times = {}
         for event_individual in filter(lambda event_indi: event_converter.is_action(event_indi), event_individuals):
-            action_iri = event_converter.convert(event_individual)
-            res = self.neem_interface.prolog.ensure_once(
-                f"kb_call(has_time_interval({atom(action_iri)}, StartTime, EndTime))")
-            action_times[action_iri] = {"start_time": float(res["StartTime"]),
-                                        "end_time": float(res["EndTime"])}
-            event_times.append(float(res["StartTime"]))
-            event_times.append(float(res["EndTime"]))
+            try:
+                action_iri = event_converter.convert(event_individual)
+                res = self.neem_interface.prolog.ensure_once(
+                    f"kb_call(has_time_interval({atom(action_iri)}, StartTime, EndTime))")
+                action_times[action_iri] = {"start_time": float(res["StartTime"]),
+                                            "end_time": float(res["EndTime"])}
+                event_times.append(float(res["StartTime"]))
+                event_times.append(float(res["EndTime"]))
+            except NotImplementedError:
+                continue    # Anonymous actions will be asserted for all gaps in the timeline
         return action_times
 
     def _assert_anonymous_actions(self, event_converter, action_times, event_times) -> List[str]:
@@ -261,9 +272,9 @@ class VRNEEMConverter:
                 f"kb_call(has_time_interval({atom(action_iri)}, StartTime, EndTime))")
             start_time = float(res["StartTime"])
             end_time = float(res["EndTime"])
-            situations_initial = situations_manifesting_at_timestamp(self.neem_interface, start_time)
-            situations_terminal = situations_manifesting_at_timestamp(self.neem_interface, end_time)
-            situations_during = list(set(situations_initial + situations_terminal))
+            situations_initial = get_initial_situations(self.neem_interface, start_time)
+            situations_terminal = get_terminal_situations(self.neem_interface, end_time)
+            situations_runtime = get_runtime_situations(self.neem_interface, start_time, end_time)
             situation_transition_iri = self.neem_interface.assert_situation(self.agent, [],
                                                                             'http://www.ease-crc.org/ont/SOMA.owl#SituationTransition')
             self.neem_interface.prolog.ensure_once(
@@ -274,7 +285,7 @@ class VRNEEMConverter:
             for situation in situations_terminal:
                 self.neem_interface.prolog.ensure_once(
                     f"kb_project(holds({atom(situation_transition_iri)}, 'http://www.ease-crc.org/ont/SOMA.owl#hasTerminalSituation', {atom(situation)}))")
-            for situation in situations_during:
+            for situation in situations_runtime:
                 self.neem_interface.prolog.ensure_once(
                     f"kb_project(holds({atom(situation)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(action_iri)}))")
 
@@ -301,11 +312,12 @@ def main(args):
                                      env_urdf="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/urdf/dm_room_vr.urdf",
                                      env_urdf_prefix="http://knowrob.org/kb/supermarket.owl#",
                                      end_effector_class_name="http://knowrob.org/kb/knowrob.owl#GenesisRightHand")
-    neem_converter.convert(args.output_dir)
+    neem_converter.convert(args.output_dir, args.episode_name)
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("vr_neem_dir", type=str)
     parser.add_argument("output_dir", type=str)
+    parser.add_argument("--episode_name", type=str)
     main(parser.parse_args())

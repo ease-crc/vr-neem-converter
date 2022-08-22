@@ -45,15 +45,28 @@ def load_ontology(owl_filepath: str) -> Ontology:
     return get_ontology(f"file://{temp_file.name}").load()
 
 
-def situations_manifesting_at_timestamp(neem_interface: NEEMInterface, ts: float) -> List[str]:
-    """
-    Which situations manifest at a given timestamp?
-    A Situation manifests at a timestamp if it manifests in an Event whose interval inclusively contains the timestamp.
-    """
+def get_initial_situations(neem_interface: NEEMInterface, action_start_time: float) -> List[str]:
     try:
         res = neem_interface.prolog.ensure_all_solutions(f"""is_state(State), has_time_interval(State, StartTime, EndTime),
-            StartTime =< {ts}, EndTime >= {ts}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
+            StartTime =< {action_start_time}, EndTime > {action_start_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
         return [sol["Situation"] for sol in res]
     except:
         return []
 
+
+def get_terminal_situations(neem_interface: NEEMInterface, action_end_time: float) -> List[str]:
+    try:
+        res = neem_interface.prolog.ensure_all_solutions(f"""is_state(State), has_time_interval(State, StartTime, EndTime),
+            StartTime =< {action_end_time}, EndTime > {action_end_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
+        return [sol["Situation"] for sol in res]
+    except:
+        return []
+
+
+def get_runtime_situations(neem_interface: NEEMInterface, action_start_time: float, action_end_time: float) -> List[str]:
+    try:
+        res = neem_interface.prolog.ensure_all_solutions(f"""is_state(State), has_time_interval(State, StartTime, EndTime),
+            StartTime =< {action_start_time}, EndTime >= {action_end_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
+        return [sol["Situation"] for sol in res]
+    except:
+        return []
