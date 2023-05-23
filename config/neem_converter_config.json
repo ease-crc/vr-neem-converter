@@ -1,0 +1,8 @@
+{
+  "object_urdfs": {
+    "http://knowrob.org/kb/knowrob.owl#HangingDummyWide": "package://ilias_final_experiments/urdf/hanging_dummy.urdf",
+    "http://knowrob.org/kb/knowrob.owl#HangingDummyLong": "package://ilias_final_experiments/urdf/hanging_dummy.urdf",
+    "http://knowrob.org/kb/knowrob.owl#HangingDummy": "package://ilias_final_experiments/urdf/hanging_dummy.urdf",
+    "http://knowrob.org/kb/knowrob.owl#ShoppingBasket": "package://ilias_final_experiments/urdf/shopping_basket_vr.urdf"
+  }
+}

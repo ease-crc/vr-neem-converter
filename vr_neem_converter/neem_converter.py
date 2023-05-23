@@ -1,6 +1,7 @@
 """
 Copyright (C) 2021 ArtiMinds Robotics GmbH
 """
+import json
 import os
 import shutil
 import time
@@ -8,6 +9,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Tuple, List
 
+from knowrob_industrial.utils import resolve_package_urls
 from tqdm import tqdm
 from neem_interface_python.neem_interface import NEEMInterface, Episode
 from neem_interface_python.rosprolog_client import atom
@@ -15,6 +17,7 @@ from neem_interface_python.utils.utils import Datapoint
 from owlready2 import Ontology
 from pymongo import MongoClient
 from pymongo.collection import Collection
+import pybullet as pb
 
 from event_converters import EventConverter
 from vr_neem_converter.utils import load_ontology, assert_agent_and_hand, get_initial_situations, \
@@ -30,7 +33,8 @@ class VRNEEMConverter:
                  env_indi_name="http://knowrob.org/kb/supermarket.owl#Supermarket",
                  env_urdf="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/urdf/dm_room_vr.urdf",
                  env_urdf_prefix="http://knowrob.org/kb/supermarket.owl",
-                 end_effector_class_name="http://knowrob.org/kb/knowrob.owl#GenesisRightHand"):
+                 end_effector_class_name="http://knowrob.org/kb/knowrob.owl#GenesisRightHand",
+                 object_urdf_mappings=None):
         self.neem_interface = NEEMInterface()
         self.vr_neem_dir = vr_neem_dir
         self.mongo_client = MongoClient()
@@ -44,7 +48,9 @@ class VRNEEMConverter:
         self.env_urdf_prefix = env_urdf_prefix
         self.all_objects = {}  # Maps object IRI to type
         self.active_objects = {}  # Maps object IRI to type for objects involved in interactions with other objects
+        self.object_urdf_mappings = object_urdf_mappings if object_urdf_mappings is not None else {}
         self.episode = None
+        self.physics_client = pb.connect(pb.DIRECT)
 
     def convert(self, neem_output_path, episode_name: str = None):
         db_name = os.listdir(os.path.join(self.vr_neem_dir, "dump"))[0]
@@ -70,6 +76,7 @@ class VRNEEMConverter:
             semantic_map_dir = os.path.join(self.vr_neem_dir, "SemLog", "SemanticMap")
             semantic_map_owl_filename = next(filter(lambda fn: fn.endswith("SM.owl"), os.listdir(semantic_map_dir)))
             semantic_map_owl_filepath = os.path.join(semantic_map_dir, semantic_map_owl_filename)
+
             # Create new episode and make assertions
             with Episode(self.neem_interface, "http://www.artiminds.com/kb/artm.owl#PickAndPlaceTask",
                          self.env_owl,
@@ -92,10 +99,8 @@ class VRNEEMConverter:
         objects = {}
         active_objects = {}
 
-        # Assert objects of known types as individuals of that type, else just as dul:'PhysicalObject'
-        all_individuals = list(semantic_map.individuals())
-        print(f"Asserting object types for {len(all_individuals)} individuals...")
         for obj_indi in tqdm(semantic_map.individuals()):
+            # Assert objects of known types as individuals of that type, else just as dul:'PhysicalObject'
             if obj_indi.is_a[0].iri in known_classes:
                 obj_type = obj_indi.is_a[0].iri
             else:
@@ -106,6 +111,8 @@ class VRNEEMConverter:
                 ])
             """)
             objects[obj_indi.iri] = obj_type
+
+            # Assert participant roles
             if self._is_active_object(obj_indi.iri, event_ontology):
                 self.neem_interface.prolog.ensure_once(f"""
                     kb_project([
@@ -113,6 +120,10 @@ class VRNEEMConverter:
                     ])
                 """)
                 active_objects[obj_indi.iri] = obj_type
+
+            # Assert URDF for objects where we have it
+            if obj_type in self.object_urdf_mappings.keys():
+                self._assert_geometry_for_individual(obj_indi.iri, self.object_urdf_mappings[obj_type])
 
         # Assert hands as end effectors
         end_effector_class = semantic_map.search_one(iri=self.end_effector_class_name)
@@ -267,6 +278,16 @@ class VRNEEMConverter:
             * which has M terminalSituations, which manifest at end time
         Each action also has the situations of the states with which it (fully) overlaps
         """
+
+        # class Action:
+        #     def __init__(self, start_time, end_time, initial_situations, runtime_situations, terminal_situations):
+        #         self.start_time = start_time
+        #         self.end_time = end_time
+        #         self.initial_situations = initial_situations
+        #         self.runtime_situations = runtime_situations
+        #         self.terminal_situations = terminal_situations
+
+        # all_actions = []
         for action_iri in actions:
             res = self.neem_interface.prolog.ensure_once(
                 f"kb_call(has_time_interval({atom(action_iri)}, StartTime, EndTime))")
@@ -289,6 +310,20 @@ class VRNEEMConverter:
                 self.neem_interface.prolog.ensure_once(
                     f"kb_project(holds({atom(situation)}, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', {atom(action_iri)}))")
 
+            # all_actions.append(Action(start_time, end_time, situations_initial, situations_runtime, situations_terminal))
+
+        # all_actions.sort(key=lambda act: act.end_time)
+        # for i in range(len(all_actions) - 1):
+        #     current_action = all_actions[i]
+        #     next_action = all_actions[i+1]
+        #     for terminal_sit in current_action.terminal_situations:
+        #         if terminal_sit not in next_action.initial_situations:
+        #             print(f"Terminal situation at {current_action.end_time} missing from initial situations at {next_action.start_time}")
+        #     for initial_sit in next_action.initial_situations:
+        #         if initial_sit not in current_action.terminal_situations:
+        #             print(f"Initial situation at {next_action.start_time} missing from terminal situations at {current_action.end_time}")
+
+
     def _is_active_object(self, obj_iri: str, event_ontology: Ontology) -> bool:
         """
         Return True if obj_iri is the object of any object property assertion in any event.
@@ -301,8 +336,34 @@ class VRNEEMConverter:
                         return True
         return False
 
+    def _assert_geometry_for_individual(self, obj_iri: str, urdf_path: str):
+        # Assert URDF
+        print(f"Asserting URDF for {obj_iri}")
+        self.neem_interface.prolog.ensure_once(f"kb_project(has_kinematics_file({atom(obj_iri)}, {atom(urdf_path)}, 'URDF'))")
+
+        # Compute bbox
+        print(f"Asserting bbox shape for {obj_iri}")
+        resolved_urdf_path = resolve_package_urls(urdf_path)
+        body_id = pb.loadURDF(resolved_urdf_path, useFixedBase=1)
+        aabb_min, aabb_max = pb.getAABB(body_id)
+        bbox_extents_x = aabb_max[0] - aabb_min[0]
+        bbox_extents_y = aabb_max[1] - aabb_min[1]
+        bbox_extents_z = aabb_max[2] - aabb_min[2]
+
+        # Assert bbox shape
+        shape_iri = self.neem_interface.prolog.ensure_once("kb_project(new_iri(S, soma:'Shape'))")["S"]
+        self.neem_interface.prolog.ensure_once(f"kb_project(holds({atom(obj_iri)}, soma:'hasShape', {atom(shape_iri)}))")
+        region_iri = self.neem_interface.prolog.ensure_once("kb_project(new_iri(SR, soma:'ShapeRegion'))")["SR"]
+        self.neem_interface.prolog.ensure_once(f"kb_project(holds({atom(shape_iri)}, dul:'hasRegion', {atom(region_iri)}))")
+        self.neem_interface.prolog.ensure_once(f"kb_project(holds({atom(region_iri)}, soma:'hasWidth', {bbox_extents_x}))")
+        self.neem_interface.prolog.ensure_once(f"kb_project(holds({atom(region_iri)}, soma:'hasDepth', {bbox_extents_y}))")
+        self.neem_interface.prolog.ensure_once(f"kb_project(holds({atom(region_iri)}, soma:'hasHeight', {bbox_extents_z}))")
+        pb.removeBody(body_id)
+
 
 def main(args):
+    with open(args.config_file) as config_file:
+        config = json.load(config_file)
     neem_converter = VRNEEMConverter(args.vr_neem_dir,
                                      agent_owl="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/owl/vr_agent.owl",
                                      agent_indi_name="http://knowrob.org/kb/vr_agent.owl#VRAgent_0",
@@ -311,7 +372,8 @@ def main(args):
                                      env_indi_name="http://knowrob.org/kb/supermarket.owl#Supermarket_VR_0",
                                      env_urdf="/home/lab019/alt/catkin_ws/src/ilias/ilias_final_experiments/urdf/dm_room_vr.urdf",
                                      env_urdf_prefix="http://knowrob.org/kb/supermarket.owl#",
-                                     end_effector_class_name="http://knowrob.org/kb/knowrob.owl#GenesisRightHand")
+                                     end_effector_class_name="http://knowrob.org/kb/knowrob.owl#GenesisRightHand",
+                                     object_urdf_mappings=config["object_urdfs"])
     neem_converter.convert(args.output_dir, args.episode_name)
 
 
@@ -319,5 +381,6 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("vr_neem_dir", type=str)
     parser.add_argument("output_dir", type=str)
+    parser.add_argument("config_file", type=str)
     parser.add_argument("--episode_name", type=str)
     main(parser.parse_args())

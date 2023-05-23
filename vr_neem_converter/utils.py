@@ -45,19 +45,21 @@ def load_ontology(owl_filepath: str) -> Ontology:
     return get_ontology(f"file://{temp_file.name}").load()
 
 
-def get_initial_situations(neem_interface: NEEMInterface, action_start_time: float) -> List[str]:
+def get_initial_situations(neem_interface: NEEMInterface, action_start_time: float, time_padding=0.0) -> List[str]:
+    start_time = action_start_time - time_padding
     try:
         res = neem_interface.prolog.ensure_all_solutions(f"""is_state(State), has_time_interval(State, StartTime, EndTime),
-            StartTime =< {action_start_time}, EndTime > {action_start_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
+            StartTime =< {start_time}, EndTime > {start_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
         return [sol["Situation"] for sol in res]
     except:
         return []
 
 
-def get_terminal_situations(neem_interface: NEEMInterface, action_end_time: float) -> List[str]:
+def get_terminal_situations(neem_interface: NEEMInterface, action_end_time: float, time_padding=0.2) -> List[str]:
+    end_time = action_end_time + time_padding
     try:
         res = neem_interface.prolog.ensure_all_solutions(f"""is_state(State), has_time_interval(State, StartTime, EndTime),
-            StartTime =< {action_end_time}, EndTime > {action_end_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
+            StartTime =< {end_time}, EndTime > {end_time}, holds(Situation, 'http://www.ease-crc.org/ont/SOMA.owl#manifestsIn', State)""")
         return [sol["Situation"] for sol in res]
     except:
         return []
