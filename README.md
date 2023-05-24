@@ -4,6 +4,8 @@ Companion repository for the paper "Knowledge-Driven Robot Program Synthesis fro
 
 This repository implements section 3.2 of the paper ("Representing Demonstrations: Episodic Memories"), including the creation of `Action` individuals in the [SOMA](https://ease-crc.github.io/soma/) ontology along with the timestamped hand and object trajectories as well as additional semantic information parsed from VR force-dynamic events.
 
+The source code for interpreting NEEMs to candidate task sequences for execution on a robot can be found in [this repository](https://github.com/ease-crc/vr-program-synthesis). 
+
 ## Overview
 
 The core functionality is implemented in *vr_neem_converter/neem_converter.py*, which takes a directory containing a [RobCoG](https://www.robcog.org/) VR dump and produces a set of NEEMs, one for each recorded demonstration in the dump:
