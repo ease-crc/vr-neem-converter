@@ -1,6 +1,6 @@
 # vr-neem-converter
 
-Companion repository for the paper "Knowledge-Driven Robot Program Synthesis from Human VR Demonstrations", presented at the 20th International Conference on Principles of Knowledge Representation and Reasoning (KR2023) ([arXiv](TODO)).
+Companion repository for the paper "Knowledge-Driven Robot Program Synthesis from Human VR Demonstrations", presented at the 20th International Conference on Principles of Knowledge Representation and Reasoning (KR2023) ([arXiv](https://arxiv.org/abs/2306.02739)).
 
 This repository implements section 3.2 of the paper ("Representing Demonstrations: Episodic Memories"), including the creation of `Action` individuals in the [SOMA](https://ease-crc.github.io/soma/) ontology along with the timestamped hand and object trajectories as well as additional semantic information parsed from VR force-dynamic events.
 
